@@ -1,5 +1,5 @@
 from keras.layers import Dense, Embedding, LSTM
-from keras.models import Sequential
+from keras.models import Sequential, load_model
 import h5py
 import numpy as np
 import pandas as pd
@@ -47,16 +47,18 @@ def create_structured_data(path, dataset_path):
     #     data_point = hdf5_file['data'][i]
     #     vals = [index_to_char[np.argmax(v)] for v in data_point]
     #     print(''.join(vals))
+    return index_to_char, char_to_index
 
 def lstm_model(input_shape):
     model = Sequential()
-    model.add(LSTM(200, return_sequences=True,
-                   input_shape=input_shape))
+    model.add(Dense(200, activation='tanh',
+                    input_shape=input_shape))
+    model.add(LSTM(200, return_sequences=True))
     model.add(LSTM(200, return_sequences=True))
     model.add(Dense(128 + 2, activation='softmax'))
     return model
 
-def train_rnn_model(model, data, num_iters, batch_size):
+def train_rnn_model(model, model_path, data, num_iters, batch_size):
     model.compile(loss='categorical_crossentropy', optimizer='adam')
     # Train by getting the model to regress on next character.
     for i in range(num_iters):
@@ -65,13 +67,20 @@ def train_rnn_model(model, data, num_iters, batch_size):
         loss = model.train_on_batch(data_batch, data_batch) 
         if i % 10 == 0:
             print(i, loss)
+    model.save(model_path)
+
+def generate_strings(model_path, num_strings):
+    model = load_model(model_path)
+    for i in range(num_strings):
+        start = None
 
 if __name__ == '__main__':
     csv_path = "realDonaldTrump_tweets.csv"
     dataset_path = "tweet_data.h5"
+    model_path = "trained_lstm.h5"
     if False:
         create_structured_data(csv_path, dataset_path)
     data = h5py.File(dataset_path, mode='r')['data']
-    model = lstm_model(data.shape[1:])
-    # print(model.predict(data[:2]).shape)
-    train_rnn_model(model, data, 1000, 32)
+    if True:
+        model = lstm_model(data.shape[1:])
+        train_rnn_model(model, data, 500, 32)
