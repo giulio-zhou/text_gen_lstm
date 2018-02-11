@@ -86,6 +86,49 @@ def generate_strings(model_path, num_strings, str_len):
         # print(generated_strings[-1])
     return generated_strings
 
+def generate_strings_beam(model_path, num_strings, str_len, beam_width=30):
+    model = load_model(model_path)
+    index_to_char = map_index_to_char()
+    generated_strings = []
+    for i in range(num_strings):
+        vals = [[np.zeros(128)] for _ in range(beam_width)]
+        # We'd rather add logs rather than multiply small floats.
+        state_probs = [np.log(1 / 128.)] * beam_width
+        for k in range(beam_width):
+            vals[k][0][np.random.choice(np.arange(128))] = 1
+        for j in range(str_len - 1):
+            next_step_probs = np.zeros((beam_width, 128))
+            # Expand each node.
+            for k in range(beam_width):
+                input_seq = np.array(vals[k]).reshape(1, len(vals[k]), 128)
+                probs = model.predict(input_seq)[0][-1]
+                next_step_probs[k] = np.log(probs)
+            combined_probs = (next_step_probs.T + state_probs).T
+            # Get indices corresponding to top-beam_width probs.
+            top_k = np.argpartition(-combined_probs.flatten(),
+                                    beam_width)[:beam_width]
+            top_k_probs = combined_probs.flatten()[top_k]
+            ys, xs = np.where(np.isin(combined_probs, top_k_probs))
+            ys, xs = ys[:beam_width], xs[:beam_width]
+            new_vals, new_state_probs = [], []
+            for state_idx, char_idx in zip(ys, xs):
+                next_char = np.zeros(128)
+                next_char[char_idx] = 1
+                new_vals.append(vals[state_idx] + [next_char])
+                new_state_probs.append(combined_probs[state_idx, char_idx])
+            # Update vals and state_probs.
+            vals = new_vals
+            state_probs = new_state_probs
+            print(len(vals[0]), str_len)
+            # for k in range(beam_width):
+            #     decoded_string = map(lambda x: index_to_char[np.argmax(x)], vals[k])
+            #     print(''.join(decoded_string))
+        for k in range(beam_width):
+            decoded_string = map(lambda x: index_to_char[np.argmax(x)], vals[k])
+            generated_strings.append(''.join(decoded_string))
+    return generated_strings
+
+
 if __name__ == '__main__':
     csv_path = "realDonaldTrump_tweets.csv"
     dataset_path = "tweet_data.h5"
@@ -98,6 +141,7 @@ if __name__ == '__main__':
         model = lstm_model(input_shape)
         print(model.predict(preprocess_batch(data[:5])[0]).shape)
         train_rnn_model(model, model_path, data, 10000, 32)
-    generated_strings = generate_strings(model_path, 5, 300)
+    # generated_strings = generate_strings(model_path, 5, 300)
+    generated_strings = generate_strings_beam(model_path, 1, 300)
     for sample_str in generated_strings:
         print(sample_str)
